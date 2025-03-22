@@ -188,13 +188,33 @@ public class Main {
     }    
     
     public static void Q2(SparkSession spark) {
-        var q21 = 0;
+        Dataset<Row> resultQ21 = spark.sql("SELECT COUNT(*) FROM patients WHERE birthYear = 1999");
+        long q21 = resultQ21.first().getLong(0);
         System.out.println(">> [q21: " + q21 + "]");
 
-        var q22 = 0;
+        Dataset<Row> resultQ22 = spark.sql("SELECT date, COUNT(*) AS count FROM diagnoses WHERE diagYear = 2024 GROUP BY date ORDER BY count DESC LIMIT 1");
+        String q22 = resultQ22.first().getString(0);
         System.out.println(">> [q22: " + q22 + "]");
 
-        var q23 = 0;
+        // Count number of medicines per each prescription
+        Dataset<Row> countMeds = spark.sql(
+            "SELECT d.date, COUNT(p.medicineId) AS medCount " +
+            "FROM diagnoses d " +
+            "JOIN prescriptions p ON d.prescriptionId = p.prescriptionId " +
+            "WHERE d.diagYear = 2024 " +
+            "GROUP BY d.date"
+        );
+        countMeds.createOrReplaceTempView("countMeds");
+
+        // Order by count and leave only top row
+        Dataset<Row> resultQ23 = spark.sql(
+            "SELECT date, medCount AS count " +
+            "FROM countMeds " +
+            "ORDER BY count DESC " +
+            "LIMIT 1"
+        );
+
+        String q23 = resultQ23.first().getString(0);
         System.out.println(">> [q23: " + q23 + "]");
     }
 
