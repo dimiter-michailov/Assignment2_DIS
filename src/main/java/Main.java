@@ -1,6 +1,7 @@
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.Dataset;
@@ -12,6 +13,7 @@ import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 
+import scala.Tuple2;
 import scala.Tuple3;
 
 public class Main {
@@ -41,9 +43,9 @@ public class Main {
     public static Tuple3<JavaRDD<String>, JavaRDD<String>, JavaRDD<String>> Q1(JavaSparkContext sc, SparkSession spark) {
 
         // Load the .csv files.
-        JavaRDD<String> patients = sc.textFile("/Users/dimiter.m0108/Downloads/assignment2_data_v2/patients.csv");
-        JavaRDD<String> prescriptions = sc.textFile("/Users/dimiter.m0108/Downloads/assignment2_data_v2/prescriptions.csv");
-        JavaRDD<String> diagnoses = sc.textFile("/Users/dimiter.m0108/Downloads/assignment2_data_v2/diagnoses.csv");
+        JavaRDD<String> patients = sc.textFile("/patients.csv");
+        JavaRDD<String> prescriptions = sc.textFile("/prescriptions.csv");
+        JavaRDD<String> diagnoses = sc.textFile("/diagnoses.csv");
 
         //Clean the invalid lines from patients.
         patients = patients.filter(line -> {
@@ -219,13 +221,55 @@ public class Main {
     }
 
     public static void Q3(Tuple3<JavaRDD<String>, JavaRDD<String>, JavaRDD<String>> rdds) {
-        var q31 = 0;
+        JavaRDD<String> patients = rdds._1();
+        JavaRDD<String> filtered = patients.filter(s -> s.split(",", -1)[4].equals("1999"));
+        // Map each record to a pair with a constant key and a count of 1
+        JavaPairRDD<String, Integer> pairs = filtered.mapToPair(s -> new Tuple2<>("count", 1));
+        // Reduce by key to sum all counts
+        JavaPairRDD<String, Integer> count = pairs.reduceByKey((a, b) -> a + b);
+        var q31 = count.first()._2;
         System.out.println(">> [q31: " + q31 + "]");
 
-        var q32 = 0;
+        JavaRDD<String> diagnoses = rdds._3();
+        // Filter for diagnoses in 2024, map each record to (date, 1), and count per date.
+        JavaPairRDD<String, Integer> dateCounts = diagnoses
+            .filter(line -> line.split(",", -1)[5].equals("2024"))
+            .mapToPair(line -> {
+                String[] parts = line.split(",", -1);
+                return new Tuple2<>(parts[2], 1);
+            })
+            .reduceByKey((a, b) -> a + b);
+        // Reduce to get the (date, count) pair with the maximum count.
+        Tuple2<String, Integer> maxDatePair = dateCounts
+            .reduce((pair1, pair2) -> pair1._2 > pair2._2 ? pair1 : pair2);
+        var q32 = maxDatePair._1;
         System.out.println(">> [q32: " + q32 + "]");
 
-        var q33 = 0;
+        JavaRDD<String> prescriptions = rdds._2();
+        // For diagnoses: filter for year "2024" and create a pair (prescriptionId, date)
+        JavaPairRDD<String, String> diagPairs = diagnoses
+            .filter(line -> line.split(",", -1)[5].equals("2024"))
+            .mapToPair(line -> {
+                String[] parts = line.split(",", -1);
+                // parts[4] is prescriptionId and parts[2] is date
+                return new Tuple2<>(parts[4], parts[2]);
+            });
+        // For prescriptions: map each record to a pair (prescriptionId, 1)
+        JavaPairRDD<String, Integer> prescPairs = prescriptions
+            .mapToPair(line -> {
+                String[] parts = line.split(",", -1);
+                return new Tuple2<>(parts[0], 1);
+            });
+        // The join produces (prescriptionId, (date, 1)) for each medicine entry.
+        JavaPairRDD<String, Tuple2<String, Integer>> joined = diagPairs.join(prescPairs);
+        // Map each joined record to (date, 1) and then count medicines per date.
+        JavaPairRDD<String, Integer> maxDateCounts = joined
+            .mapToPair(tuple -> new Tuple2<>(tuple._2()._1, 1))
+            .reduceByKey((a, b) -> a + b);
+        // Reduce to find the (date, count) pair with the maximum count.
+        Tuple2<String, Integer> maxPair = maxDateCounts
+            .reduce((a, b) -> a._2 > b._2 ? a : b);
+        var q33 = maxPair._1;
         System.out.println(">> [q33: " + q33 + "]");
     }
 
