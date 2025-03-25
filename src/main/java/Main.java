@@ -43,9 +43,9 @@ public class Main {
     public static Tuple3<JavaRDD<String>, JavaRDD<String>, JavaRDD<String>> Q1(JavaSparkContext sc, SparkSession spark) {
 
         // Load the .csv files.
-        JavaRDD<String> patients = sc.textFile("~/assignment2_data_small_answers_v2/patients.csv");
-        JavaRDD<String> prescriptions = sc.textFile("~/assignment2_data_small_answers_v2/prescriptions.csv");
-        JavaRDD<String> diagnoses = sc.textFile("~/assignment2_data_small_answers_v2/diagnoses.csv");
+        JavaRDD<String> patients = sc.textFile("data/patients.csv");
+        JavaRDD<String> prescriptions = sc.textFile("data/prescriptions.csv");
+        JavaRDD<String> diagnoses = sc.textFile("data/diagnoses.csv");
 
         //Clean the invalid lines from patients.
         patients = patients.filter(line -> {
@@ -64,7 +64,7 @@ public class Main {
             return true;
         });
 
-        //Split dateOfBirth into 4 separate parts: dateOfBirth + year + month + day
+        //Split dateOfBirth into 4 separate lineSplit: dateOfBirth + year + month + day
         patients = patients.map(line -> {
             String[] attributes = line.split(",", -1);
         
@@ -75,10 +75,10 @@ public class Main {
             String dateOfBirth = attributes[3];
         
             //Split the date attribute.
-            String[] dateParts = dateOfBirth.split("-");
-            String year = dateParts[0];
-            String month = dateParts[1];
-            String day = dateParts[2];
+            String[] datelineSplit = dateOfBirth.split("-");
+            String year = datelineSplit[0];
+            String month = datelineSplit[1];
+            String day = datelineSplit[2];
         
             return patientId + "," + patientName + "," + address + "," + dateOfBirth + "," + year + "," + month + "," + day;
         });
@@ -134,7 +134,7 @@ public class Main {
         Dataset<Row> dfPrescriptions = spark.createDataFrame(prescriptionRows, prescriptionsSchema);
         dfPrescriptions.createOrReplaceTempView("prescriptions");
     
-        //Split date into 4 separate parts: date + year + month + day
+        //Split date into 4 separate lineSplit: date + year + month + day
         diagnoses = diagnoses.map(line -> {
             String[] attributes = line.split(",", -1);
         
@@ -146,10 +146,10 @@ public class Main {
             String prescriptionId = attributes[4];
         
             // Split the date into year + month + day
-            String[] dateParts = date.split("-");
-            String diagYear = dateParts[0];
-            String diagMonth = dateParts[1];
-            String diagDay = dateParts[2];
+            String[] datelineSplit = date.split("-");
+            String diagYear = datelineSplit[0];
+            String diagMonth = datelineSplit[1];
+            String diagDay = datelineSplit[2];
         
             return patientId + "," + doctorId + "," + date + "," + diagnosisText + "," + prescriptionId + "," + diagYear + "," + diagMonth + "," + diagDay;
         });
@@ -164,10 +164,10 @@ public class Main {
             String diagnosis = attributes[3];
             int prescriptionId = Integer.parseInt(attributes[4]);
 
-            String[] dateParts = date.split("-");
-            int diagYear = Integer.parseInt(dateParts[0]);
-            int diagMonth = Integer.parseInt(dateParts[1]);
-            int diagDay = Integer.parseInt(dateParts[2]);
+            String[] datelineSplit = date.split("-");
+            int diagYear = Integer.parseInt(datelineSplit[0]);
+            int diagMonth = Integer.parseInt(datelineSplit[1]);
+            int diagDay = Integer.parseInt(datelineSplit[2]);
 
             return RowFactory.create(patientId, doctorId, date, diagnosis, prescriptionId, diagYear, diagMonth, diagDay);
         });
@@ -222,54 +222,54 @@ public class Main {
 
     public static void Q3(Tuple3<JavaRDD<String>, JavaRDD<String>, JavaRDD<String>> rdds) {
         JavaRDD<String> patients = rdds._1();
+        JavaRDD<String> prescriptions = rdds._2();
+        JavaRDD<String> diagnoses = rdds._3();
+
         JavaRDD<String> filtered = patients.filter(s -> s.split(",", -1)[4].equals("1999"));
-        // Map each record to a pair with a constant key and a count of 1
+        // Map each record to a pair with a key and a count of 1
         JavaPairRDD<String, Integer> pairs = filtered.mapToPair(s -> new Tuple2<>("count", 1));
-        // Reduce by key to sum all counts
+        // Sum counts
         JavaPairRDD<String, Integer> count = pairs.reduceByKey((a, b) -> a + b);
         var q31 = count.first()._2;
         System.out.println(">> [q31: " + q31 + "]");
 
-        JavaRDD<String> diagnoses = rdds._3();
         // Filter for diagnoses in 2024, map each record to (date, 1), and count per date.
         JavaPairRDD<String, Integer> dateCounts = diagnoses
             .filter(line -> line.split(",", -1)[5].equals("2024"))
             .mapToPair(line -> {
-                String[] parts = line.split(",", -1);
-                return new Tuple2<>(parts[2], 1);
+                String[] lineSplit = line.split(",", -1);
+                return new Tuple2<>(lineSplit[2], 1);
             })
             .reduceByKey((a, b) -> a + b);
-        // Reduce to get the (date, count) pair with the maximum count.
+        // Get (date, count) pair with the maximum count.
         Tuple2<String, Integer> maxDatePair = dateCounts
             .reduce((pair1, pair2) -> pair1._2 > pair2._2 ? pair1 : pair2);
         var q32 = maxDatePair._1;
         System.out.println(">> [q32: " + q32 + "]");
 
-        JavaRDD<String> prescriptions = rdds._2();
-        // For diagnoses: filter for year "2024" and create a pair (prescriptionId, date)
+        // Filter diagnoses for 2024 and map to (prescriptionId, date)
         JavaPairRDD<String, String> diagPairs = diagnoses
             .filter(line -> line.split(",", -1)[5].equals("2024"))
             .mapToPair(line -> {
-                String[] parts = line.split(",", -1);
-                // parts[4] is prescriptionId and parts[2] is date
-                return new Tuple2<>(parts[4], parts[2]);
+                String[] lineSplit = line.split(",", -1);
+                return new Tuple2<>(lineSplit[4], lineSplit[2]);
             });
-        // For prescriptions: map each record to a pair (prescriptionId, 1)
+        // Map prescriptions to (prescriptionId, 1).
         JavaPairRDD<String, Integer> prescPairs = prescriptions
             .mapToPair(line -> {
-                String[] parts = line.split(",", -1);
-                return new Tuple2<>(parts[0], 1);
+                String[] lineSplit = line.split(",", -1);
+                return new Tuple2<>(lineSplit[0], 1);
             });
-        // The join produces (prescriptionId, (date, 1)) for each medicine entry.
+        // Join diagnoses and prescriptions on prescriptionId.
         JavaPairRDD<String, Tuple2<String, Integer>> joined = diagPairs.join(prescPairs);
-        // Map each joined record to (date, 1) and then count medicines per date.
-        JavaPairRDD<String, Integer> maxDateCounts = joined
-            .mapToPair(tuple -> new Tuple2<>(tuple._2()._1, 1))
+        // Create a key of (date, prescriptionId) with a value 1, then sum.
+        JavaPairRDD<Tuple2<String, String>, Integer> groupByDateAndPrescription = joined
+            .mapToPair(tuple -> new Tuple2<>(new Tuple2<>(tuple._2()._1, tuple._1), 1))
             .reduceByKey((a, b) -> a + b);
-        // Reduce to find the (date, count) pair with the maximum count.
-        Tuple2<String, Integer> maxPair = maxDateCounts
-            .reduce((a, b) -> a._2 > b._2 ? a : b);
-        var q33 = maxPair._1;
+        // Find tuple with maximum medCount.
+        Tuple2<Tuple2<String, String>, Integer> maxPair = groupByDateAndPrescription
+            .reduce((pair1, pair2) -> pair1._2 > pair2._2 ? pair1 : pair2);
+        String q33 = maxPair._1._1;
         System.out.println(">> [q33: " + q33 + "]");
     }
 
