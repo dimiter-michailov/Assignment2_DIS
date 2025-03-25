@@ -16,6 +16,11 @@ import org.apache.spark.sql.types.StructType;
 import scala.Tuple2;
 import scala.Tuple3;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 public class Main {
     public static void main(String[] args) {
         Logger.getLogger("org").setLevel(Level.OFF);
@@ -274,7 +279,116 @@ public class Main {
     }
 
     public static void Q4(Tuple3<JavaRDD<String>, JavaRDD<String>, JavaRDD<String>> rdds) {
-        var q4 = 0;
+        JavaRDD<String> diagnosis = rdds._3();
+        String q4 = "";
+        // Create pairs
+        JavaPairRDD<String, Tuple2<String, Integer>> doctorDiagnosisCounts = diagnosis.mapToPair(line -> {
+            String[] attributes = line.split(",", -1);
+
+            // Extract diagnosis attributes
+            String doctorId = attributes[1];
+            String date = attributes[2];
+            String diagnosisText = attributes[3];
+
+            // Create "year-month"
+            String[] dateParts = date.split("-");
+            String diagYearMonth = dateParts[0] + "-" + dateParts[1];
+
+            return new Tuple2<>(diagYearMonth + "," + doctorId, new Tuple2<>(diagnosisText, 1));
+        });
+
+        // Count occurrences of each diagnosis per doctor per calendar month
+        JavaPairRDD<String, Map<String, Integer>> doctorDiagnosisCountPerMonth = doctorDiagnosisCounts
+                .mapToPair( t -> {
+                    String yearMonthDoctor = t._1();
+                    String diagnosisText = t._2()._1();
+                    int count = t._2()._2();
+
+                    // Store diagnosis counts in a map
+                    Map<String, Integer> diagnosisMap = new HashMap<>();
+                    diagnosisMap.put(diagnosisText, count);
+
+                    return new Tuple2<>(yearMonthDoctor, diagnosisMap);
+                }).reduceByKey((map1, map2) -> {
+                    // Merge maps by summing diagnosis counts
+                    for (Map.Entry<String, Integer> entry : map2.entrySet()) {
+                        map1.merge(entry.getKey(), entry.getValue(), Integer::sum);
+                    }
+                    return map1;
+                });
+
+        // Convert (year-month, doctorId) -> Map(diagnosis, count) into (year-month)
+        JavaPairRDD<String, Map<String, Map<String, Integer>>> diagnosisPerMonth = doctorDiagnosisCountPerMonth
+                .mapToPair(t -> {
+                    String[] keyAttributes = t._1().split(",");
+                    String yearMonth = keyAttributes[0];
+                    String doctorId = keyAttributes[1];
+                    Map<String, Integer> diagnosisMap = t._2();
+
+                    // Map where doctorId is key and their diagnosis counts are the value
+                    Map<String, Map<String, Integer>> diagnosisPerMonthMap = new HashMap<>();
+                    diagnosisPerMonthMap.put(doctorId, diagnosisMap);
+
+                    return new Tuple2<>(yearMonth, diagnosisPerMonthMap);
+                }).reduceByKey((map1, map2) -> {
+                    map1.putAll(map2);
+                    return map1;
+                });
+
+        // Count total doctors per month
+        JavaPairRDD<String, Integer> totalDoctorsPerMonth = diagnosisPerMonth
+                .mapValues(map -> map.size());
+
+        // Determine most frequent diagnosis per month
+        JavaPairRDD<String, String> epidemicDiagnoses = diagnosisPerMonth
+                .join(totalDoctorsPerMonth).mapToPair(t -> {
+                    String yearMonth = t._1();
+                    Map<String, Map<String, Integer>> diagnosisPerMonthMap = t._2()._1();
+                    int totalDoctors = t._2()._2();
+
+                    // Count the number of doctors that detected each diagnosis per month
+                    Map<String, Integer> diagnosisToDoctorCount = new HashMap<>();
+                    for (Map<String, Integer> diagnosisMap : diagnosisPerMonthMap.values()) {
+                        String mostFrequentForDoctor = null;
+                        int maxDoctorCount = 0;
+
+                        // Find the most reported diagnosis for each doctor
+                        for (Map.Entry<String, Integer> entry : diagnosisMap.entrySet()) {
+                            if (entry.getValue() > maxDoctorCount) {
+                                mostFrequentForDoctor = entry.getKey();
+                                maxDoctorCount = entry.getValue();
+                            }
+                        }
+
+                        // Increment the doctor count for this diagnosis
+                        if (mostFrequentForDoctor != null) {
+                            diagnosisToDoctorCount.merge(mostFrequentForDoctor, 1, Integer::sum);
+                        }
+                    }
+
+                    // Find the diagnosis with the most doctors reporting it
+                    String empidemicDIagnosis = null;
+                    int maxDoctorsReporting = 0;
+                    for (Map.Entry<String, Integer> entry : diagnosisToDoctorCount.entrySet()) {
+                        if (entry.getValue() > maxDoctorsReporting) {
+                            empidemicDIagnosis = entry.getKey();
+                            maxDoctorsReporting = entry.getValue();
+                        }
+                    }
+
+                    // Check if 50% threshold is exceeded
+                    if (empidemicDIagnosis != null && maxDoctorsReporting > totalDoctors/2) {
+                        return new Tuple2<>(yearMonth, empidemicDIagnosis);
+                    }
+                    return null;
+                }).filter(t -> t != null);
+
+        String result = String.join(";", epidemicDiagnoses
+                .sortByKey() // sort by month
+                .map(t -> String.format("%s, %s", t._1(), t._2()))
+                .collect());
+        q4 = result;
+
         System.out.println(">> [q4: " + q4 + "]");
     }
 }
