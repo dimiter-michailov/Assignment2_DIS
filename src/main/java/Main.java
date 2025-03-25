@@ -43,9 +43,9 @@ public class Main {
     public static Tuple3<JavaRDD<String>, JavaRDD<String>, JavaRDD<String>> Q1(JavaSparkContext sc, SparkSession spark) {
 
         // Load the .csv files.
-        JavaRDD<String> patients = sc.textFile("/patients.csv");
-        JavaRDD<String> prescriptions = sc.textFile("/prescriptions.csv");
-        JavaRDD<String> diagnoses = sc.textFile("/diagnoses.csv");
+        JavaRDD<String> patients = sc.textFile("~/assignment2_data_small_answers_v2/patients.csv");
+        JavaRDD<String> prescriptions = sc.textFile("~/assignment2_data_small_answers_v2/prescriptions.csv");
+        JavaRDD<String> diagnoses = sc.textFile("~/assignment2_data_small_answers_v2/diagnoses.csv");
 
         //Clean the invalid lines from patients.
         patients = patients.filter(line -> {
@@ -200,11 +200,11 @@ public class Main {
 
         // Count number of medicines per each prescription
         Dataset<Row> countMeds = spark.sql(
-            "SELECT d.date, COUNT(p.medicineId) AS medCount " +
+            "SELECT d.date, p.prescriptionId, COUNT(p.medicineId) AS medCount " +
             "FROM diagnoses d " +
             "JOIN prescriptions p ON d.prescriptionId = p.prescriptionId " +
             "WHERE d.diagYear = 2024 " +
-            "GROUP BY d.date"
+            "GROUP BY d.date, p.prescriptionId"
         );
         countMeds.createOrReplaceTempView("countMeds");
 
