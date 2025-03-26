@@ -385,7 +385,7 @@ public class Main {
 
         String result = String.join(";", epidemicDiagnoses
                 .sortByKey() // sort by month
-                .map(t -> String.format("%s, %s", t._1(), t._2()))
+                .map(t -> String.format("%s,%s", t._1(), t._2()))
                 .collect());
         q4 = result;
 
